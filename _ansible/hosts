@@ -1,0 +1,35 @@
+all:
+  children:
+    linux-servers:
+      vars:
+        ansible_user: "maestro"
+        ansible_password: "xxx"
+        ansible_ssh_extra_args: "-o StrictHostKeyChecking=no"
+        ansible_become: "yes"
+        ansible_become_password: "xxx"
+
+      children:
+        ad-web01:
+          hosts:
+            10.1[0:9]0.2.8
+
+    windows-servers:
+      vars:
+        ansible_user: "maestro"
+        ansible_password: "xxx"
+        ansible_connection: "winrm"
+        ansible_winrm_server_cert_validation: "ignore"
+
+      children:
+        ad-hop01:
+          hosts:
+            10.1[0:9]0.2.4
+        ad-dc01:
+          hosts:
+            10.1[0:9]0.2.5
+        ad-ica01:
+          hosts:
+            10.1[0:9]0.2.6
+        ad-cdp01:
+          hosts:
+            10.1[0:9]0.2.7
