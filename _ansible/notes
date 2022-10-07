@@ -1,8 +1,0 @@
-# sudo pip3 install --upgrade pip
-
-# /usr/bin/python3.8 -m pip install --user --ignore-installed pywinrm
-# A v dalsich verzich
-
-# ansible-galaxy collection install -vvvv ansible.windows
-
-# ansible -i hosts -m win_ping windows-servers
