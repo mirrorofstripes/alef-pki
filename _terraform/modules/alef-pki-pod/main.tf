@@ -22,7 +22,7 @@ resource "random_password" "maestro_password" {
 
 resource "azurerm_resource_group" "rg-pod" {
   location = var.azure_region
-  name = "rg-pki-${var.pod_name}"
+  name     = "rg-trn-pki-${var.pod_name}"
 }
 
 ## Define Root CA environments
@@ -50,10 +50,10 @@ resource "azurerm_public_ip" "pip-RootCA" {
 }
 
 resource "azurerm_dns_a_record" "pip-RootCA" {
-  resource_group_name = var.public_dns_zone_resource_group_name
-  zone_name           = var.public_dns_zone_name
+  resource_group_name = azurerm_resource_group.rg-pod.name
+  zone_name           = azurerm_dns_zone.pod-alefsec-com.name
   name                = "rca"
-  ttl = "300"
+  ttl                 = "300"
   target_resource_id  = azurerm_public_ip.pip-RootCA.id
 }
 
@@ -162,20 +162,28 @@ resource "azurerm_private_dns_zone" "private-dns-zone" {
   name                = "${var.pod_name}.lab"
 }
 
+resource "random_id" "private-dns-link-to-AD" {
+  byte_length = 8
+}
+
 resource "azurerm_private_dns_zone_virtual_network_link" "private-dns-link-to-AD" {
-  resource_group_name  = azurerm_resource_group.rg-pod.name
+  resource_group_name   = azurerm_resource_group.rg-pod.name
   private_dns_zone_name = azurerm_private_dns_zone.private-dns-zone.name
-  virtual_network_id   = azurerm_virtual_network.vnet-AD.id
-  name                 = var.pod_name
-  registration_enabled = true
+  virtual_network_id    = azurerm_virtual_network.vnet-AD.id
+  name                  = random_id.private-dns-link-to-AD.hex
+  registration_enabled  = true
+}
+
+resource "random_id" "private-dns-link-to-Hub" {
+  byte_length = 8
 }
 
 resource "azurerm_private_dns_zone_virtual_network_link" "private-dns-link-to-Hub" {
-  resource_group_name  = azurerm_resource_group.rg-pod.name
+  resource_group_name   = azurerm_resource_group.rg-pod.name
   private_dns_zone_name = azurerm_private_dns_zone.private-dns-zone.name
-  virtual_network_id   = var.hub_vnet_id
-  name                 = var.pod_name
-  registration_enabled = false
+  virtual_network_id    = var.hub_vnet_id
+  name                  = random_id.private-dns-link-to-Hub.hex
+  registration_enabled  = false
 }
 
 resource "azurerm_dns_zone" "pod-alefsec-com" {
@@ -187,7 +195,7 @@ resource "azurerm_dns_ns_record" "pod-alefsec-com" {
   resource_group_name = var.public_dns_zone_resource_group_name
   zone_name           = var.public_dns_zone_name
   name                = var.pod_name
-  ttl = "300"
+  ttl                 = "300"
   records             = azurerm_dns_zone.pod-alefsec-com.name_servers
 }
 
@@ -201,10 +209,10 @@ resource "azurerm_public_ip" "pip-hop01" {
 }
 
 resource "azurerm_dns_a_record" "pip-hop01" {
-  resource_group_name = var.public_dns_zone_resource_group_name
-  zone_name           = var.public_dns_zone_name
+  resource_group_name = azurerm_resource_group.rg-pod.name
+  zone_name           = azurerm_dns_zone.pod-alefsec-com.name
   name                = "hop"
-  ttl = "300"
+  ttl                 = "300"
   target_resource_id  = azurerm_public_ip.pip-hop01.id
 }
 
@@ -484,4 +492,43 @@ resource "azurerm_linux_virtual_machine" "vm-web01" {
     product   = "rockylinux-9"
     publisher = "erockyenterprisesoftwarefoundationinc1653071250513"
   }
+}
+
+### Define an inventory file for Ansible
+
+resource "local_file" "file-pod-inventory" {
+  filename = "${path.module}/.temp/${var.pod_name}.yml"
+  content  = <<EOF
+all:
+  children:
+    windows-servers:
+      children:
+        ad-hop01:
+          hosts:
+            ${azurerm_windows_virtual_machine.vm-hop01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
+              ansible_password: ${random_password.maestro_password.result}
+
+        ad-dc01:
+          hosts:
+            ${azurerm_windows_virtual_machine.vm-dc01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
+              ansible_password: ${random_password.maestro_password.result}
+        
+        ad-ica01:
+          hosts:
+            ${azurerm_windows_virtual_machine.vm-ica01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
+              ansible_password: ${random_password.maestro_password.result}
+        
+        ad-cdp01:
+          hosts:
+            ${azurerm_windows_virtual_machine.vm-cdp01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
+              ansible_password: ${random_password.maestro_password.result}
+    
+    linux-servers: 
+      children:
+        ad-web01:
+          hosts:
+            ${azurerm_linux_virtual_machine.vm-web01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
+              ansible_password: ${random_password.maestro_password.result}
+              ansible_become_password: ${random_password.maestro_password.result}
+EOF
 }

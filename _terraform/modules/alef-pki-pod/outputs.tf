@@ -1,5 +1,5 @@
 output "maestro_password" {
-  value       = random_password.maestro_password
+  value       = random_password.maestro_password.result
   description = "Admin password for remote access to the pod computers."
 }
 

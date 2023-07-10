@@ -28,6 +28,11 @@ variable "hub_vnet_id" {
   description = "The Hub Virtual Network id."
 }
 
+variable "hub_ansible_vm_id" {
+  type        = string
+  description = "The Hub Ansible VM id."
+}
+
 variable "public_dns_zone_name" {
   type        = string
   description = "The Public DNS Zone name."

@@ -1,0 +1,7 @@
+all:
+  children:
+    windows-servers:
+      vars:
+        ansible_user: "maestro"
+        ansible_connection: "winrm"
+        ansible_winrm_server_cert_validation: "ignore"
