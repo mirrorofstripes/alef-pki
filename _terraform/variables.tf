@@ -1,7 +1,7 @@
 variable "azure_region" {
   type        = string
   description = "The Azure region to deploy the hub resources to."
-  default     = "northeurope"
+  default     = "westeurope"
 }
 
 variable "hub_ip_subnet" {

@@ -15,15 +15,15 @@
         path: C:\_adds
         state: directory
 
-    - name: Create an AD forest called ad.aleflab.com
-      ansible.windows.win_domain:
-        dns_domain_name: ad.aleflab.com
-        dns_netbios_name: AD
-        install_dns: yes
-        create_dns_delegation: no
+    - name: Create an AD forest and a domain in each pod
+      microsoft.ad.domain:
+        dns_domain_name: "ad.{{ pod_name  }}.alefsec.com"
+        domain_netbios_name: AD
+        install_dns: true
+        create_dns_delegation: false
         forest_mode: WinThreshold
         domain_mode: WinThreshold
-        ntds_path: C:\_adds\ntds
+        database_path: C:\_adds\ntds
         log_path: C:\_adds\logs
         sysvol_path: C:\_adds\sysvol
         safe_mode_password: Password112233
@@ -36,6 +36,14 @@
         script: |
           Set-DnsServerForwarder -IPAddress "168.63.129.16" -UseRootHint $false -Verbose
 
+    - name: Create a CNAME record for ad-web01
+      community.windows.win_dns_record:
+        name: "ad-web01"
+        zone: "ad.{{ pod_name  }}.alefsec.com"
+        type: "CNAME"
+        value: "ad-web01.{{ pod_name }}.lab"
+        
+
 - name: Deploy the neccessary software on ad-hop01
   hosts: ad-hop01
 
@@ -43,10 +51,11 @@
     - name: Deploy neccessary software using chocolatey
       chocolatey.chocolatey.win_chocolatey:
         name:
-          - openssl
+          - OpenSSL.Light
           - microsoft-edge
           - wireshark 
           - putty
+          - ldapadmin
 
     - name: Install ADDS RSAT
       ansible.windows.win_feature:
@@ -68,6 +77,12 @@
         src: 'C:\ProgramData\chocolatey\lib\putty.portable\tools\PUTTY.EXE'
         dest: 'C:\Users\Public\Desktop\Putty.lnk'
         icon: 'C:\ProgramData\chocolatey\lib\putty.portable\tools\PUTTY.EXE,0'
+
+    - name: 'LDAP Admin'
+      community.windows.win_shortcut:
+        src: 'C:\ProgramData\chocolatey\lib\ldapadmin\tools\LdapAdmin.exe'
+        dest: 'C:\Users\Public\Desktop\LDAP Admin.lnk'
+        icon: 'C:\ProgramData\chocolatey\lib\ldapadmin\tools\LdapAdmin.exe,0'
         
 
 - name: Deploy win10pcap on ad-hop01
@@ -91,11 +106,11 @@
       ansible.windows.win_reboot:
 
     - name: Join AD
-      ansible.windows.win_domain_membership:
+      microsoft.ad.membership:
         state: domain
-        dns_domain_name: ad.aleflab.com
+        dns_domain_name: "ad.{{ pod_name }}.alefsec.com"
         domain_admin_user: ad\maestro
-        domain_admin_password: 8CNRA8QTnQ7EExD9MU24g
+        domain_admin_password: "{{ ansible_password  }}"
     
     - name: Reboot the computer
       ansible.windows.win_reboot:
@@ -116,16 +131,16 @@
       ansible.builtin.lineinfile:
         path: /etc/httpd/conf.d/ssl.conf
         regexp: 'ServerName www.example.com\:443'
-        line: 'ServerName ad-web01.ad.aleflab.com:443'
+        line: "ServerName ad-web01.ad.{{ pod_name }}.alefsec.com:443"
 
     - name: Configure httpd for SSL (2/3)
       ansible.builtin.lineinfile:
         path: /etc/httpd/conf.d/ssl.conf
-        regexp: 'SSLCertificateFile'
+        regexp: 'SSLCertificateFile /etc/pki/tls/certs/localhost.crt'
         line: 'SSLCertificateFile /etc/pki/tls/certs/ad-web01.crt'
 
     - name: Configure httpd for SSL (3/3)
       ansible.builtin.lineinfile:
         path: /etc/httpd/conf.d/ssl.conf
-        regexp: 'SSLCertificateKeyFile'
+        regexp: 'SSLCertificateKeyFile /etc/pki/tls/private/localhost.key'
         line: 'SSLCertificateKeyFile /etc/pki/tls/private/ad-web01.key'

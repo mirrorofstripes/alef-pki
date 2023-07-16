@@ -97,7 +97,7 @@ resource "azurerm_windows_virtual_machine" "vm-RootCA" {
   resource_group_name   = azurerm_resource_group.rg-pod.name
   name                  = "RootCA"
   location              = var.azure_region
-  size                  = "Standard_B2s"
+  size                  = "Standard_A1v2"
   admin_username        = "maestro"
   admin_password        = random_password.maestro_password.result
   network_interface_ids = [azurerm_network_interface.nic-RootCA.id]
@@ -286,7 +286,7 @@ resource "azurerm_virtual_machine_extension" "vm-hop01" {
   #         Second, since value is json-encoded, escape \" as \\\".
   settings = <<SETTINGS
     {
-      "commandToExecute": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1 | Invoke-Expression\""
+      "commandToExecute": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/ansible/ansible/stable-2.15/examples/scripts/ConfigureRemotingForAnsible.ps1 | Invoke-Expression\""
     }
 SETTINGS
 }
@@ -339,7 +339,7 @@ resource "azurerm_virtual_machine_extension" "vm-dc01" {
   #         Second, since value is json-encoded, escape \" as \\\".
   settings = <<SETTINGS
     {
-      "commandToExecute": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1 | Invoke-Expression\""
+      "commandToExecute": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/ansible/ansible/stable-2.15/examples/scripts/ConfigureRemotingForAnsible.ps1 | Invoke-Expression\""
     }
 SETTINGS
 }
@@ -392,24 +392,63 @@ resource "azurerm_virtual_machine_extension" "vm-ica01" {
   #         Second, since value is json-encoded, escape \" as \\\".
   settings = <<SETTINGS
     {
-      "commandToExecute": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1 | Invoke-Expression\""
+      "commandToExecute": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/ansible/ansible/stable-2.15/examples/scripts/ConfigureRemotingForAnsible.ps1 | Invoke-Expression\""
     }
 SETTINGS
 }
 
 ### Define CDP VMs
 
+resource "azurerm_public_ip" "pip-cdp01" {
+  resource_group_name = azurerm_resource_group.rg-pod.name
+  location            = var.azure_region
+  name                = "pip-cdp01"
+  allocation_method   = "Static"
+}
+
+resource "azurerm_dns_a_record" "pip-cdp01" {
+  resource_group_name = azurerm_resource_group.rg-pod.name
+  zone_name           = azurerm_dns_zone.pod-alefsec-com.name
+  name                = "cdp"
+  ttl                 = "300"
+  target_resource_id  = azurerm_public_ip.pip-cdp01.id
+}
+
+resource "azurerm_network_security_group" "nsg-cdp01" {
+  resource_group_name = azurerm_resource_group.rg-pod.name
+  location            = var.azure_region
+  name                = "nsg-cdp01"
+
+  security_rule {
+    name                       = "HTTP-IN"
+    priority                   = 100
+    direction                  = "Inbound"
+    access                     = "Allow"
+    protocol                   = "Tcp"
+    source_port_range          = "*"
+    destination_port_range     = "80"
+    source_address_prefix      = "*"
+    destination_address_prefix = "*"
+  }
+}
+
 resource "azurerm_network_interface" "nic-cdp01" {
   resource_group_name = azurerm_resource_group.rg-pod.name
   location            = var.azure_region
-  name                = "ad-cdp01"
+  name                = "nic-cdp01"
   depends_on          = [azurerm_private_dns_zone_virtual_network_link.private-dns-link-to-AD]
 
   ip_configuration {
     name                          = "internal"
     subnet_id                     = azurerm_subnet.vnet-AD-default.id
     private_ip_address_allocation = "Dynamic"
+    public_ip_address_id          = azurerm_public_ip.pip-cdp01.id
   }
+}
+
+resource "azurerm_network_interface_security_group_association" "nsg-cdp01" {
+  network_interface_id      = azurerm_network_interface.nic-cdp01.id
+  network_security_group_id = azurerm_network_security_group.nsg-cdp01.id
 }
 
 resource "azurerm_windows_virtual_machine" "vm-cdp01" {
@@ -445,7 +484,7 @@ resource "azurerm_virtual_machine_extension" "vm-cdp01" {
   #         Second, since value is json-encoded, escape \" as \\\".
   settings = <<SETTINGS
     {
-      "commandToExecute": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/ansible/ansible/devel/examples/scripts/ConfigureRemotingForAnsible.ps1 | Invoke-Expression\""
+      "commandToExecute": "powershell -ExecutionPolicy Bypass -Command \"Invoke-WebRequest -UseBasicParsing -Uri https://raw.githubusercontent.com/ansible/ansible/stable-2.15/examples/scripts/ConfigureRemotingForAnsible.ps1 | Invoke-Expression\""
     }
 SETTINGS
 }
@@ -469,7 +508,7 @@ resource "azurerm_linux_virtual_machine" "vm-web01" {
   resource_group_name             = azurerm_resource_group.rg-pod.name
   location                        = var.azure_region
   name                            = "ad-web01"
-  size                            = "Standard_B2s"
+  size                            = "Standard_A1v2"
   disable_password_authentication = "false"
   admin_username                  = "maestro"
   admin_password                  = random_password.maestro_password.result
@@ -506,29 +545,34 @@ all:
         ad-hop01:
           hosts:
             ${azurerm_windows_virtual_machine.vm-hop01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
-              ansible_password: ${random_password.maestro_password.result}
+              ansible_password: '${random_password.maestro_password.result}'
+              pod_name: '${var.pod_name}'
 
         ad-dc01:
           hosts:
             ${azurerm_windows_virtual_machine.vm-dc01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
-              ansible_password: ${random_password.maestro_password.result}
+              ansible_password: '${random_password.maestro_password.result}'
+              pod_name: '${var.pod_name}'
         
         ad-ica01:
           hosts:
             ${azurerm_windows_virtual_machine.vm-ica01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
-              ansible_password: ${random_password.maestro_password.result}
+              ansible_password: '${random_password.maestro_password.result}'
+              pod_name: '${var.pod_name}'
         
         ad-cdp01:
           hosts:
             ${azurerm_windows_virtual_machine.vm-cdp01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
-              ansible_password: ${random_password.maestro_password.result}
+              ansible_password: '${random_password.maestro_password.result}'
+              pod_name: '${var.pod_name}'
     
     linux-servers: 
       children:
         ad-web01:
           hosts:
             ${azurerm_linux_virtual_machine.vm-web01.name}.${azurerm_private_dns_zone.private-dns-zone.name}:
-              ansible_password: ${random_password.maestro_password.result}
-              ansible_become_password: ${random_password.maestro_password.result}
+              ansible_password: '${random_password.maestro_password.result}'
+              ansible_become_password: '${random_password.maestro_password.result}'
+              pod_name: '${var.pod_name}'
 EOF
 }
